@@ -1,0 +1,19 @@
+# Core simulation frameworks
+mesa
+numpy
+pandas
+scipy
+networkx
+
+# API and real-time communication
+fastapi
+uvicorn[standard]
+websockets
+python-multipart
+pydantic
+
+# Machine Learning and AI (basic)
+scikit-learn
+
+# Utilities
+python-dotenv
