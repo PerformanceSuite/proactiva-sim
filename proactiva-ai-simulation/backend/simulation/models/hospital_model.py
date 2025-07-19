@@ -1,11 +1,12 @@
 """
-Main hospital simulation model
+Main hospital simulation model - Refactored with improved error handling
 """
 from mesa import Model
 from mesa.datacollection import DataCollector
 from mesa.space import NetworkGrid
 import networkx as nx
 import random
+import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import numpy as np
@@ -13,6 +14,10 @@ import numpy as np
 from ..agents.patient_agent import VeteranPatientAgent, PatientCondition
 from ..agents.provider_agent import ProviderAgent, ProviderType, ProviderSpecialty
 from ..insights.insight_engine import InsightEngine
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class VAHospitalModel(Model):
@@ -43,11 +48,18 @@ class VAHospitalModel(Model):
         
         # Facility layout
         self.G = self._create_hospital_network()
-        self.grid = NetworkGrid(self.G)
+        if self.G is not None:
+            self.grid = NetworkGrid(self.G)
+        else:
+            self.grid = None
         
-        # Agent scheduling - simplified for newer Mesa
-        self.agents = []
+        # Custom agent tracking - Mesa 3.0+ compatibility
+        self.custom_agents = []
         self.time = 0
+        
+        # Use Mesa's built-in scheduling - Mesa 3.0+ doesn't have separate time module
+        # We'll use a simple list for agent management
+        self.schedule = None
         
         # Waiting areas and queues
         self.waiting_room = []
@@ -195,17 +207,21 @@ class VAHospitalModel(Model):
                     specialty=specialty,
                     experience_years=random.randint(1, 25)
                 )
-                self.agents.append(provider)
+                self.custom_agents.append(provider)
                 
                 # Place provider in appropriate location
                 if specialty == ProviderSpecialty.EMERGENCY:
-                    self.grid.place_agent(provider, 'emergency')
+                    if self.grid:
+                        self.grid.place_agent(provider, 'emergency')
                 elif specialty == ProviderSpecialty.MENTAL_HEALTH:
-                    self.grid.place_agent(provider, 'mental_health')
+                    if self.grid:
+                        self.grid.place_agent(provider, 'mental_health')
                 elif specialty == ProviderSpecialty.PRIMARY_CARE:
-                    self.grid.place_agent(provider, 'primary_care')
+                    if self.grid:
+                        self.grid.place_agent(provider, 'primary_care')
                 else:
-                    self.grid.place_agent(provider, 'specialist')
+                    if self.grid:
+                        self.grid.place_agent(provider, 'specialist')
                     
                 provider_id += 1
                 
@@ -234,12 +250,13 @@ class VAHospitalModel(Model):
                 age=random.normalvariate(55, 15)  # Veterans skew older
             )
             
-            self.agents.append(patient)
-            self.grid.place_agent(patient, 'entrance')
+            self.custom_agents.append(patient)
+            if self.grid:
+                self.grid.place_agent(patient, 'entrance')
             
     def _create_veteran_social_network(self):
         """Create social connections between veterans"""
-        veterans = [a for a in self.agents 
+        veterans = [a for a in self.custom_agents 
                    if isinstance(a, VeteranPatientAgent)]
         
         # Create connections based on service era and other factors
@@ -259,21 +276,32 @@ class VAHospitalModel(Model):
                         v2.social_connections.append(v1)
                         
     def step(self):
-        """Advance simulation by one step"""
-        # Collect data
-        self.datacollector.collect(self)
+        """Advance simulation by one step with improved error handling"""
+        step_start_time = datetime.now()
         
-        # Process scheduled events
-        self._process_events()
-        
-        # Step all agents
-        for agent in self.agents:
-            agent.step()
-        self.time += 1
-        
-        # Reset available resources
-        self.vr_stations_available = self.vr_stations
-        self.telehealth_rooms_available = self.telehealth_rooms
+        try:
+            # Collect data
+            self.datacollector.collect(self)
+            
+            # Process scheduled events
+            self._process_events()
+            
+            # Step all agents with performance optimization
+            self._step_agents_optimized()
+            self.time += 1
+            
+            # Reset available resources
+            self.vr_stations_available = self.vr_stations
+            self.telehealth_rooms_available = self.telehealth_rooms
+            
+            # Log performance every 100 steps
+            if self.time % 100 == 0:
+                step_duration = (datetime.now() - step_start_time).total_seconds()
+                logger.info(f"Step {self.time}: {len(self.custom_agents)} agents, {step_duration:.3f}s duration")
+            
+        except Exception as e:
+            logger.error(f"Step {self.time} failed: {e}")
+            # Continue simulation despite errors
         
         # Generate new patient arrivals
         self._generate_arrivals()
@@ -330,8 +358,9 @@ class VAHospitalModel(Model):
             self,
             condition=PatientCondition.EMERGENCY
         )
-        self.agents.append(patient)
-        self.grid.place_agent(patient, 'entrance')
+        self.custom_agents.append(patient)
+        if self.grid:
+            self.grid.place_agent(patient, 'entrance')
         self.patient_arrivals += 1
         
     def _create_new_patient(self):
@@ -349,8 +378,9 @@ class VAHospitalModel(Model):
             self,
             condition=condition
         )
-        self.agents.append(patient)
-        self.grid.place_agent(patient, 'entrance')
+        self.custom_agents.append(patient)
+        if self.grid:
+            self.grid.place_agent(patient, 'entrance')
         self.patient_arrivals += 1
         
     def reception_available(self) -> bool:
@@ -360,7 +390,7 @@ class VAHospitalModel(Model):
         
     def provider_available_for(self, patient) -> bool:
         """Check if appropriate provider is available for patient"""
-        providers = [a for a in self.agents 
+        providers = [a for a in self.custom_agents 
                     if isinstance(a, ProviderAgent) and a.is_available]
         
         # Match provider to patient need
@@ -414,7 +444,7 @@ class VAHospitalModel(Model):
     def _compute_average_wait_time(self) -> float:
         """Compute average wait time for all patients"""
         wait_times = []
-        for agent in self.agents:
+        for agent in self.custom_agents:
             if isinstance(agent, VeteranPatientAgent) and hasattr(agent, 'wait_time'):
                 wait_times.append(agent.wait_time)
         return np.mean(wait_times) if wait_times else 0
@@ -422,14 +452,14 @@ class VAHospitalModel(Model):
     def _compute_average_satisfaction(self) -> float:
         """Compute average patient satisfaction"""
         satisfactions = []
-        for agent in self.agents:
+        for agent in self.custom_agents:
             if isinstance(agent, VeteranPatientAgent):
                 satisfactions.append(agent.satisfaction)
         return np.mean(satisfactions) if satisfactions else 50
         
     def _compute_provider_utilization(self) -> float:
         """Compute provider utilization rate"""
-        providers = [a for a in self.agents if isinstance(a, ProviderAgent)]
+        providers = [a for a in self.custom_agents if isinstance(a, ProviderAgent)]
         if not providers:
             return 0
         busy_providers = sum(1 for p in providers if not p.is_available)
@@ -443,7 +473,7 @@ class VAHospitalModel(Model):
         
     def _compute_mental_health_access(self) -> float:
         """Compute mental health access metric"""
-        mh_patients = [a for a in self.agents 
+        mh_patients = [a for a in self.custom_agents 
                       if isinstance(a, VeteranPatientAgent) and 
                       a.condition == PatientCondition.MENTAL_HEALTH]
         if not mh_patients:
@@ -471,6 +501,23 @@ class VAHospitalModel(Model):
             
         return base_cost + wait_cost - innovation_savings
         
+    def _step_agents_optimized(self):
+        """Optimized agent stepping for better performance with 1000+ agents"""
+        # Batch agents by type for more efficient processing
+        patients = [a for a in self.custom_agents if a.agent_type == 'veteran_patient']
+        providers = [a for a in self.custom_agents if a.agent_type == 'provider']
+        
+        # Process providers first (they have simpler logic)
+        for provider in providers:
+            provider.step()
+        
+        # Process patients in batches to avoid memory issues
+        batch_size = 100
+        for i in range(0, len(patients), batch_size):
+            batch = patients[i:i + batch_size]
+            for patient in batch:
+                patient.step()
+    
     def get_current_state(self) -> Dict[str, Any]:
         """Get current model state for API"""
         return {

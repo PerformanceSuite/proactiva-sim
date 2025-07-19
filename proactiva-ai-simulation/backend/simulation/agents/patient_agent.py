@@ -1,7 +1,7 @@
 """
 Patient agents with realistic healthcare-seeking behaviors
 """
-from .base_agent import BaseHealthcareAgent, AgentState
+from .modernized_base_agent import ModernizedBaseAgent, AgentState
 from enum import Enum
 import random
 import numpy as np
@@ -27,7 +27,7 @@ class PatientState(Enum):
     LEFT_WITHOUT_TREATMENT = "left_without_treatment"
 
 
-class VeteranPatientAgent(BaseHealthcareAgent):
+class VeteranPatientAgent(ModernizedBaseAgent):
     """Veteran patient with specific characteristics and behaviors"""
     
     def __init__(self, unique_id: str, model, **kwargs):
@@ -49,7 +49,7 @@ class VeteranPatientAgent(BaseHealthcareAgent):
         
         # State and metrics
         self.patient_state = PatientState.ARRIVAL
-        self.arrival_time = model.time
+        self.arrival_time = getattr(model, 'time', 0) if model else 0
         self.wait_time = 0
         self.satisfaction = 50
         self.pain_level = random.randint(0, 10) if self.condition != PatientCondition.PREVENTIVE else 0
@@ -67,6 +67,32 @@ class VeteranPatientAgent(BaseHealthcareAgent):
         self.current_location = "entrance"
         self.destination = None
         self.path = []
+        
+        # Grid position for animation (x, y coordinates)
+        self.position = {"x": 1, "y": 1}  # Start at entrance
+        self.target_position = {"x": 1, "y": 1}
+        self.movement_speed = 0.2  # Grid cells per step
+        self.is_moving = False
+        self.movement_progress = 0.0
+        self.movement_trail = []  # Track movement history for trails
+    
+    # Hospital area positions (matching frontend grid layout)
+    AREA_POSITIONS = {
+        'entrance': {'x': 1, 'y': 1},
+        'reception': {'x': 3, 'y': 3},
+        'waiting_room': {'x': 4, 'y': 6},
+        'triage': {'x': 12, 'y': 3},
+        'emergency': {'x': 2, 'y': 10},
+        'primary_care': {'x': 6, 'y': 10},
+        'mental_health': {'x': 10, 'y': 10},
+        'specialist': {'x': 14, 'y': 10},
+        'vr_therapy_suite': {'x': 15, 'y': 10},
+        'telehealth_center': {'x': 16, 'y': 4},
+        'pharmacy': {'x': 3, 'y': 16},
+        'lab': {'x': 8, 'y': 16},
+        'imaging': {'x': 12, 'y': 16},
+        'discharge': {'x': 16, 'y': 16}
+    }
         
     def _determine_condition(self) -> PatientCondition:
         """Determine patient condition based on veteran demographics"""
@@ -118,10 +144,30 @@ class VeteranPatientAgent(BaseHealthcareAgent):
         }
         
         return max(0, min(100, base_comfort + era_modifiers.get(self.service_era, 0)))
+    
+    def update_position(self):
+        """Update agent position for smooth movement animation"""
+        if self.current_location in self.AREA_POSITIONS:
+            self.target_position = self.AREA_POSITIONS[self.current_location].copy()
+            
+            # Smooth movement towards target
+            dx = self.target_position['x'] - self.position['x']
+            dy = self.target_position['y'] - self.position['y']
+            
+            if abs(dx) > 0.1 or abs(dy) > 0.1:
+                self.position['x'] += dx * self.movement_speed
+                self.position['y'] += dy * self.movement_speed
+                self.is_moving = True
+            else:
+                self.position = self.target_position.copy()
+                self.is_moving = False
         
-    def step(self):
-        """Execute one step of patient behavior"""
+    def agent_step(self):
+        """Execute one step of patient behavior - implements abstract method"""
         self.log_action(f"Step in state {self.patient_state.value}")
+        
+        # Update position for smooth movement animation
+        self.update_position()
         
         if self.patient_state == PatientState.ARRIVAL:
             self.arrive_at_facility()
@@ -218,6 +264,25 @@ class VeteranPatientAgent(BaseHealthcareAgent):
             self.receive_telehealth()
         else:
             self.receive_traditional_treatment()
+    
+    def receive_telehealth(self):
+        """Receive telehealth consultation"""
+        # Move to telehealth center
+        self.move_to_area("telehealth_center")
+        
+        consultation_quality = random.uniform(0.6, 0.9)
+        
+        # Update satisfaction (telehealth generally well-received)
+        satisfaction_change = (consultation_quality - 0.6) * 25
+        self.satisfaction = max(0, min(100, self.satisfaction + satisfaction_change))
+        
+        # Update pain (limited physical intervention)
+        self.pain_level = max(0, self.pain_level - 1)
+        
+        if hasattr(self.model, 'telehealth_sessions_completed'):
+            self.model.telehealth_sessions_completed += 1
+        
+        self.complete_treatment()
             
     def determine_treatment_type(self) -> str:
         """Determine which treatment modality to use"""
@@ -252,6 +317,29 @@ class VeteranPatientAgent(BaseHealthcareAgent):
             
         self.complete_treatment()
         
+    def undergo_triage(self):
+        """Undergo triage assessment"""
+        self.log_action("Undergoing triage", {
+            "urgency": self.urgency,
+            "condition": self.condition.value
+        })
+        
+        # Move to appropriate treatment area based on condition
+        treatment_area = self._determine_treatment_area()
+        self.move_to_area(treatment_area)
+        self.patient_state = PatientState.TREATMENT
+    
+    def _determine_treatment_area(self) -> str:
+        """Determine which treatment area patient should go to"""
+        if self.condition == PatientCondition.EMERGENCY:
+            return "emergency"
+        elif self.condition == PatientCondition.MENTAL_HEALTH:
+            return "mental_health"
+        elif self.condition in [PatientCondition.ROUTINE, PatientCondition.CHRONIC, PatientCondition.PREVENTIVE]:
+            return "primary_care"
+        else:
+            return "specialist"
+    
     def receive_traditional_treatment(self):
         """Receive traditional in-person treatment"""
         treatment_quality = random.uniform(0.5, 0.9)
@@ -270,7 +358,8 @@ class VeteranPatientAgent(BaseHealthcareAgent):
         self.patient_state = PatientState.DISCHARGED
         self.model.patients_treated += 1
         
-        total_time = self.model.time - self.arrival_time
+        current_time = getattr(self.model, 'time', 0) if self.model else 0
+        total_time = current_time - self.arrival_time
         self.log_action("Treatment completed", {
             "total_time": total_time,
             "wait_time": self.wait_time,
@@ -327,3 +416,136 @@ class VeteranPatientAgent(BaseHealthcareAgent):
             int(self.telehealth_preference),
             state_encoding[self.patient_state] / 6
         ]
+    
+    def ai_triage_assessment(self):
+        """Perform AI-powered triage assessment"""
+        # Simulate AI triage assessment with improved accuracy
+        ai_accuracy = 0.85  # 85% accuracy for AI triage
+        
+        # Generate AI assessment score based on patient data
+        assessment_factors = [
+            self.urgency / 5,  # Clinical urgency
+            self.pain_level / 10,  # Pain level
+            len(self.comorbidities) / 8,  # Comorbidity burden
+            (100 - self.age) / 100,  # Younger patients score higher
+            1 if self.condition == PatientCondition.EMERGENCY else 0  # Emergency condition
+        ]
+        
+        ai_score = sum(assessment_factors) / len(assessment_factors)
+        
+        # Add some randomness to simulate AI uncertainty
+        ai_score += random.uniform(-0.1, 0.1)
+        ai_score = max(0, min(1, ai_score))  # Clamp between 0 and 1
+        
+        # Determine if AI assessment is accurate
+        is_accurate = random.random() < ai_accuracy
+        
+        if is_accurate:
+            # Correct assessment - prioritize appropriately
+            if ai_score > 0.7:
+                self.urgency = min(self.urgency, 2)  # High priority
+                self.log_action("AI Triage: High priority detected")
+            elif ai_score > 0.4:
+                self.urgency = max(2, min(self.urgency, 3))  # Medium priority
+                self.log_action("AI Triage: Medium priority assigned")
+            else:
+                self.urgency = max(3, self.urgency)  # Lower priority
+                self.log_action("AI Triage: Standard priority assigned")
+        else:
+            # Incorrect assessment - simulate AI error
+            error_adjustment = random.choice([-1, 1])
+            self.urgency = max(1, min(5, self.urgency + error_adjustment))
+            self.log_action("AI Triage: Assessment completed (potential misclassification)")
+        
+        # Slight satisfaction boost from efficient AI process
+        self.satisfaction += random.randint(2, 5)
+        self.satisfaction = min(100, self.satisfaction)
+        
+        # Record AI triage usage for metrics
+        if hasattr(self.model, 'ai_triage_assessments'):
+            self.model.ai_triage_assessments += 1
+        else:
+            self.model.ai_triage_assessments = 1
+    
+    def move_to_area(self, area_name: str):
+        """Start movement to a new hospital area"""
+        if area_name in self.AREA_POSITIONS:
+            self.target_position = self.AREA_POSITIONS[area_name].copy()
+            self.destination = area_name
+            self.is_moving = True
+            self.movement_progress = 0.0
+            
+            # Log the movement
+            self.log_action("started_movement", {
+                "from": self.current_location,
+                "to": area_name,
+                "from_pos": self.position.copy(),
+                "to_pos": self.target_position.copy()
+            })
+    
+    def update_position(self):
+        """Update agent position with smooth movement"""
+        if not self.is_moving:
+            return
+        
+        # Calculate movement delta
+        dx = self.target_position['x'] - self.position['x']
+        dy = self.target_position['y'] - self.position['y']
+        distance = (dx**2 + dy**2)**0.5
+        
+        if distance < 0.1:  # Close enough to target
+            # Snap to target
+            self.position = self.target_position.copy()
+            self.is_moving = False
+            self.movement_progress = 1.0
+            self.current_location = self.destination
+            
+            # Add to movement trail
+            self.add_to_trail(self.position.copy())
+            
+            self.log_action("completed_movement", {
+                "arrived_at": self.current_location,
+                "position": self.position.copy()
+            })
+        else:
+            # Move toward target
+            move_distance = min(self.movement_speed, distance)
+            move_ratio = move_distance / distance
+            
+            self.position['x'] += dx * move_ratio
+            self.position['y'] += dy * move_ratio
+            self.movement_progress = min(1.0, self.movement_progress + move_ratio)
+            
+            # Add to trail periodically
+            if len(self.movement_trail) == 0 or distance > 1.0:
+                self.add_to_trail(self.position.copy())
+    
+    def add_to_trail(self, position: dict):
+        """Add position to movement trail"""
+        self.movement_trail.append({
+            'x': position['x'],
+            'y': position['y'],
+            'timestamp': getattr(self.model, 'time', 0) if self.model else 0
+        })
+        
+        # Keep trail length manageable
+        if len(self.movement_trail) > 10:
+            self.movement_trail = self.movement_trail[-5:]  # Keep last 5 positions
+    
+    def get_animation_data(self) -> dict:
+        """Get data needed for frontend animation"""
+        return {
+            'unique_id': self.unique_id,
+            'agent_type': self.agent_type,
+            'position': self.position.copy(),
+            'target_position': self.target_position.copy() if self.is_moving else None,
+            'current_location': self.current_location,
+            'destination': self.destination,
+            'is_moving': self.is_moving,
+            'movement_progress': self.movement_progress,
+            'state': self.patient_state.value if hasattr(self, 'patient_state') else 'unknown',
+            'condition': self.condition.value if hasattr(self, 'condition') else 'unknown',
+            'wait_time': getattr(self, 'wait_time', 0),
+            'satisfaction': getattr(self, 'satisfaction', 50),
+            'movement_trail': self.movement_trail[-3:] if self.movement_trail else []  # Last 3 positions
+        }

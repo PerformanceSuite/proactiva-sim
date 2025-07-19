@@ -1,7 +1,7 @@
 """
 Healthcare provider agents (doctors, nurses, therapists)
 """
-from .base_agent import BaseHealthcareAgent, AgentState
+from .modernized_base_agent import ModernizedBaseAgent, AgentState
 from enum import Enum
 import random
 import numpy as np
@@ -25,7 +25,7 @@ class ProviderSpecialty(Enum):
     GENERAL = "general"
 
 
-class ProviderAgent(BaseHealthcareAgent):
+class ProviderAgent(ModernizedBaseAgent):
     """Healthcare provider with realistic behaviors and constraints"""
     
     def __init__(self, unique_id: str, model, **kwargs):
@@ -63,6 +63,17 @@ class ProviderAgent(BaseHealthcareAgent):
         self.shift_end = kwargs.get('shift_end', 17)
         self.break_taken = False
         
+        # Location and movement for animation
+        self.current_location = self._get_default_location()
+        self.destination = None
+        
+        # Grid position for animation (x, y coordinates)
+        self.position = self._get_specialty_position()
+        self.target_position = self.position.copy()
+        self.movement_speed = 0.15  # Slightly slower than patients
+        self.is_moving = False
+        self.movement_progress = 0.0
+        
     def _calculate_base_efficiency(self) -> float:
         """Calculate baseline efficiency based on experience and type"""
         type_modifiers = {
@@ -87,13 +98,17 @@ class ProviderAgent(BaseHealthcareAgent):
         
         return min(1.0, age_factor + specialty_bonus + random.uniform(-0.1, 0.1))
         
-    def step(self):
-        """Execute one step of provider behavior"""
+    def agent_step(self):
+        """Execute one step of provider behavior - implements abstract method"""
+        # Update position for smooth movement animation
+        self.update_position()
+        
         # Update energy and stress
         self.update_wellbeing()
         
         # Check if on shift
-        current_hour = (self.model.time // 60) % 24
+        current_time = getattr(self.model, 'time', 0) if self.model else 0
+        current_hour = (current_time // 60) % 24
         if not (self.shift_start <= current_hour < self.shift_end):
             self.is_available = False
             return
@@ -142,6 +157,9 @@ class ProviderAgent(BaseHealthcareAgent):
             "stress": self.stress_level
         })
         
+        # Move to break room
+        self.move_to_area("break_room")
+        
         self.is_available = False
         self.break_taken = True
         
@@ -150,10 +168,15 @@ class ProviderAgent(BaseHealthcareAgent):
         self.stress_level = max(0, self.stress_level - 15)
         
         # Schedule return from break
-        self.model.schedule_event(15, self.return_from_break)
+        if hasattr(self.model, 'schedule_event'):
+            self.model.schedule_event(15, self.return_from_break)
         
     def return_from_break(self):
         """Return from break refreshed"""
+        # Return to specialty area
+        default_location = self._get_default_location()
+        self.move_to_area(default_location)
+        
         self.is_available = True
         self.log_action("Returned from break")
         
@@ -262,7 +285,7 @@ class ProviderAgent(BaseHealthcareAgent):
         self.log_action("Completed treatment", {
             "patient": patient.unique_id,
             "quality": quality,
-            "total_time": self.model.time - patient.arrival_time
+            "total_time": (getattr(self.model, 'time', 0) if self.model else 0) - patient.arrival_time
         })
         
         # Make provider available again
@@ -302,6 +325,115 @@ class ProviderAgent(BaseHealthcareAgent):
         
         # Complete patient treatment
         patient.complete_treatment()
+        
+    def get_state_vector(self) -> list:
+        """Return numerical representation for ML models"""
+        provider_type_encoding = {
+            ProviderType.PHYSICIAN: 0,
+            ProviderType.NURSE_PRACTITIONER: 1,
+            ProviderType.PHYSICIAN_ASSISTANT: 2,
+            ProviderType.NURSE: 3,
+            ProviderType.THERAPIST: 4,
+            ProviderType.TECHNICIAN: 5
+        }
+        
+        specialty_encoding = {
+            ProviderSpecialty.EMERGENCY: 0,
+            ProviderSpecialty.PRIMARY_CARE: 1,
+            ProviderSpecialty.MENTAL_HEALTH: 2,
+            ProviderSpecialty.SPECIALIST: 3,
+            ProviderSpecialty.GENERAL: 4
+        }
+        
+    # Hospital area positions for providers (matching frontend grid layout)
+    AREA_POSITIONS = {
+        'emergency': {'x': 2, 'y': 10},
+        'primary_care': {'x': 6, 'y': 10},
+        'mental_health': {'x': 10, 'y': 10},
+        'specialist': {'x': 14, 'y': 10},
+        'break_room': {'x': 8, 'y': 6},
+        'nurses_station': {'x': 9, 'y': 8},
+        'admin_office': {'x': 5, 'y': 5}
+    }
+    
+    def _get_default_location(self) -> str:
+        """Get default location based on provider specialty"""
+        specialty_locations = {
+            ProviderSpecialty.EMERGENCY: 'emergency',
+            ProviderSpecialty.PRIMARY_CARE: 'primary_care',
+            ProviderSpecialty.MENTAL_HEALTH: 'mental_health',
+            ProviderSpecialty.SPECIALIST: 'specialist',
+            ProviderSpecialty.GENERAL: 'nurses_station'
+        }
+        return specialty_locations.get(self.specialty, 'nurses_station')
+    
+    def _get_specialty_position(self) -> dict:
+        """Get position based on provider specialty"""
+        location = self._get_default_location()
+        return self.AREA_POSITIONS.get(location, {'x': 8, 'y': 8}).copy()
+    
+    def move_to_area(self, area_name: str):
+        """Start movement to a new hospital area"""
+        if area_name in self.AREA_POSITIONS:
+            self.target_position = self.AREA_POSITIONS[area_name].copy()
+            self.destination = area_name
+            self.is_moving = True
+            self.movement_progress = 0.0
+            
+            # Log the movement
+            self.log_action("started_movement", {
+                "from": self.current_location,
+                "to": area_name,
+                "from_pos": self.position.copy(),
+                "to_pos": self.target_position.copy()
+            })
+    
+    def update_position(self):
+        """Update provider position for smooth movement animation"""
+        if not self.is_moving:
+            return
+        
+        # Calculate movement delta
+        dx = self.target_position['x'] - self.position['x']
+        dy = self.target_position['y'] - self.position['y']
+        distance = (dx**2 + dy**2)**0.5
+        
+        if distance < 0.1:  # Close enough to target
+            # Snap to target
+            self.position = self.target_position.copy()
+            self.is_moving = False
+            self.movement_progress = 1.0
+            self.current_location = self.destination
+            
+            self.log_action("completed_movement", {
+                "arrived_at": self.current_location,
+                "position": self.position.copy()
+            })
+        else:
+            # Move toward target
+            move_distance = min(self.movement_speed, distance)
+            move_ratio = move_distance / distance
+            
+            self.position['x'] += dx * move_ratio
+            self.position['y'] += dy * move_ratio
+            self.movement_progress = min(1.0, self.movement_progress + move_ratio)
+    
+    def get_animation_data(self) -> dict:
+        """Get data needed for frontend animation"""
+        return {
+            'unique_id': self.unique_id,
+            'agent_type': self.agent_type,
+            'position': self.position.copy(),
+            'target_position': self.target_position.copy() if self.is_moving else None,
+            'current_location': self.current_location,
+            'destination': self.destination,
+            'is_moving': self.is_moving,
+            'movement_progress': self.movement_progress,
+            'state': 'busy' if not self.is_available else 'available',
+            'specialty': self.specialty.value if hasattr(self, 'specialty') else 'general',
+            'stress_level': getattr(self, 'stress_level', 0),
+            'energy_level': getattr(self, 'energy_level', 100)
+        }
         
     def get_state_vector(self) -> list:
         """Return numerical representation for ML models"""

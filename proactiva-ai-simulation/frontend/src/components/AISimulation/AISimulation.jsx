@@ -4,6 +4,7 @@ import SimulationVisualizer from './SimulationVisualizer';
 import InsightPanel from './InsightPanel';
 import MetricsDisplay from './MetricsDisplay';
 import AgentDetails from './AgentDetails';
+import { NaturalLanguageQuery } from '../NaturalLanguage';
 
 const AISimulation = ({ innovations }) => {
   const [simulationId, setSimulationId] = useState(null);
@@ -13,6 +14,7 @@ const AISimulation = ({ innovations }) => {
   const [insights, setInsights] = useState([]);
   const [agents, setAgents] = useState([]);
   const [selectedAgent, setSelectedAgent] = useState(null);
+  const [queryResponse, setQueryResponse] = useState(null);
   const ws = useRef(null);
 
   // Create simulation when component mounts or innovations change
@@ -148,6 +150,20 @@ const AISimulation = ({ innovations }) => {
     }
   };
 
+  const handleQueryResult = (result) => {
+    setQueryResponse(result);
+    
+    // If query returned new insights, add them to insights list
+    if (result.insights && result.insights.length > 0) {
+      setInsights(prev => [...result.insights, ...prev].slice(0, 20));
+    }
+    
+    // If query returned updated metrics, update current state
+    if (result.metrics) {
+      setCurrentState(prev => ({ ...prev, ...result.metrics }));
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Control Panel */}
@@ -199,6 +215,14 @@ const AISimulation = ({ innovations }) => {
         <MetricsDisplay metrics={currentState} />
       </div>
 
+      {/* Natural Language Query Interface */}
+      {simulationId && (
+        <NaturalLanguageQuery 
+          simulationId={simulationId}
+          onQueryResult={handleQueryResult}
+        />
+      )}
+
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Visualization Panel (2 columns) */}
@@ -215,6 +239,26 @@ const AISimulation = ({ innovations }) => {
           {/* Agent Details */}
           {selectedAgent && (
             <AgentDetails agent={selectedAgent} />
+          )}
+
+          {/* VAL Response Display */}
+          {queryResponse && (
+            <div className="bg-white rounded-lg shadow-lg p-4">
+              <h4 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
+                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mr-2">
+                  <span className="text-white font-bold text-xs">V</span>
+                </div>
+                VAL Analysis
+              </h4>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-gray-700">
+                  Q: {queryResponse.query}
+                </p>
+                <p className="text-sm text-gray-800 bg-gradient-to-r from-blue-50 to-purple-50 p-3 rounded">
+                  {queryResponse.response}
+                </p>
+              </div>
+            </div>
           )}
 
           {/* Insights */}

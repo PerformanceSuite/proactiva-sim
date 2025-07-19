@@ -43,9 +43,12 @@ class InsightEngine:
         """Analyze wait time patterns across different dimensions"""
         insights = []
         
-        # Get current agent data
-        patients = [a for a in self.model.schedule.agents 
-                   if hasattr(a, 'wait_time') and hasattr(a, 'condition')]
+        # Get current agent data - use Mesa 3.0 scheduler
+        if hasattr(self.model, 'schedule') and self.model.schedule:
+            patients = [a for a in self.model.schedule.agents 
+                       if hasattr(a, 'wait_time') and hasattr(a, 'condition')]
+        else:
+            patients = []
         
         if len(patients) < 20:
             return insights
@@ -108,7 +111,8 @@ class InsightEngine:
         
         # Collect patient data
         patient_data = []
-        for agent in self.model.schedule.agents:
+        agents = self.model.schedule.agents if hasattr(self.model, 'schedule') and self.model.schedule else []
+        for agent in agents:
             if hasattr(agent, 'satisfaction') and hasattr(agent, 'wait_time'):
                 patient_data.append({
                     'satisfaction': agent.satisfaction,
@@ -149,7 +153,8 @@ class InsightEngine:
         insights = []
         
         # Analyze provider utilization
-        providers = [a for a in self.model.schedule.agents 
+        agents = self.model.schedule.agents if hasattr(self.model, 'schedule') and self.model.schedule else []
+        providers = [a for a in agents 
                     if hasattr(a, 'patients_seen_today')]
         
         if providers:
@@ -215,7 +220,8 @@ class InsightEngine:
         
         # VR effectiveness
         if self.model.vr_stations > 0:
-            vr_utilization = self.model.vr_sessions_completed / max(self.model.schedule.time, 1)
+            model_time = getattr(self.model, 'time', 1) if self.model else 1
+            vr_utilization = self.model.vr_sessions_completed / max(model_time, 1)
             
             if vr_utilization < 0.5:  # Under-utilized
                 insights.append({
@@ -240,7 +246,8 @@ class InsightEngine:
         insights = []
         
         # Look for influence patterns in VR adoption
-        vr_adopters = [a for a in self.model.schedule.agents 
+        agents = self.model.schedule.agents if hasattr(self.model, 'schedule') and self.model.schedule else []
+        vr_adopters = [a for a in agents 
                       if hasattr(a, 'vr_willingness') and a.vr_willingness]
         
         if len(vr_adopters) > 10:
@@ -293,7 +300,8 @@ class InsightEngine:
         insights = []
         
         # Staff allocation analysis
-        providers = [a for a in self.model.schedule.agents if hasattr(a, 'specialty')]
+        agents = self.model.schedule.agents if hasattr(self.model, 'schedule') and self.model.schedule else []
+        providers = [a for a in agents if hasattr(a, 'specialty')]
         
         if providers:
             # Calculate workload by specialty

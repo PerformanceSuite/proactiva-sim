@@ -22,7 +22,8 @@ class BaseHealthcareAgent(Agent, ABC):
     """Base class for all healthcare agents"""
     
     def __init__(self, unique_id: str, model, agent_type: str):
-        super().__init__(unique_id, model)
+        super().__init__(model)
+        self.unique_id = unique_id  # Set unique_id manually for Mesa 3.0+
         self.agent_type = agent_type
         self.state = AgentState.IDLE
         self.history = []
@@ -36,7 +37,7 @@ class BaseHealthcareAgent(Agent, ABC):
     def log_action(self, action: str, details: Dict[str, Any] = None):
         """Log agent actions for analysis"""
         event = {
-            'time': self.model.time,
+            'time': getattr(self.model, 'time', 0) if self.model else 0,
             'agent_id': self.unique_id,
             'action': action,
             'details': details or {}
