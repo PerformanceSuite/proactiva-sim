@@ -57,9 +57,7 @@ class VAHospitalModel(Model):
         self.custom_agents = []
         self.time = 0
         
-        # Use Mesa's built-in scheduling - Mesa 3.0+ doesn't have separate time module
-        # We'll use a simple list for agent management
-        self.schedule = None
+        # Mesa 3.x uses built-in agent management - no separate scheduler needed
         
         # Waiting areas and queues
         self.waiting_room = []
@@ -207,6 +205,7 @@ class VAHospitalModel(Model):
                     specialty=specialty,
                     experience_years=random.randint(1, 25)
                 )
+                # Mesa 3.x automatically registers agents when created with model reference
                 self.custom_agents.append(provider)
                 
                 # Place provider in appropriate location
@@ -503,15 +502,14 @@ class VAHospitalModel(Model):
         
     def _step_agents_optimized(self):
         """Optimized agent stepping for better performance with 1000+ agents"""
-        # Batch agents by type for more efficient processing
-        patients = [a for a in self.custom_agents if a.agent_type == 'veteran_patient']
-        providers = [a for a in self.custom_agents if a.agent_type == 'provider']
+        # Use Mesa 3.x built-in agent stepping
+        # First step providers (they have simpler logic)
+        for agent in self.agents:
+            if getattr(agent, 'agent_type', '') == 'provider':
+                agent.step()
         
-        # Process providers first (they have simpler logic)
-        for provider in providers:
-            provider.step()
-        
-        # Process patients in batches to avoid memory issues
+        # Then step patients in batches to avoid memory issues
+        patients = [a for a in self.agents if getattr(a, 'agent_type', '') == 'veteran_patient']
         batch_size = 100
         for i in range(0, len(patients), batch_size):
             batch = patients[i:i + batch_size]

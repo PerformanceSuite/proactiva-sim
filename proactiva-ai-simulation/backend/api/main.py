@@ -172,7 +172,7 @@ class SimulationManager:
                 sim['step_count'] += 1
                 
                 # Get current state
-                state = model.get_current_state()
+                state = model.get_simulation_state()
                 state['step'] = sim['step_count']
                 state['simulation_time'] = model.time
                 
@@ -231,8 +231,8 @@ class SimulationManager:
         agents = []
         
         # Use pre-filtered lists for better performance
-        patients = [a for a in model.custom_agents if a.agent_type == 'veteran_patient']
-        providers = [a for a in model.custom_agents if a.agent_type == 'provider']
+        patients = [a for a in model.schedule.agents if getattr(a, 'agent_type', '') == 'veteran_patient']
+        providers = [a for a in model.schedule.agents if getattr(a, 'agent_type', '') == 'provider']
         
         # Calculate sample sizes
         total_agents = len(patients) + len(providers)
@@ -327,8 +327,8 @@ class SimulationManager:
             'simulation_id': sim_id,
             'name': sim['name'],
             'status': sim['status'],
-            'config': sim['config'].dict(),
-            'current_state': model.get_current_state(),
+            'config': sim['config'].model_dump() if hasattr(sim['config'], 'model_dump') else sim['config'].dict(),
+            'current_state': model.get_simulation_state(),
             'insights_found': len(sim['insights']),
             'step_count': sim['step_count'],
             'created_at': sim['created_at'].isoformat()
@@ -350,7 +350,7 @@ class SimulationManager:
         model = sim['model']
         
         # Get current simulation context
-        current_state = model.get_current_state()
+        current_state = model.get_simulation_state()
         insights = self.get_insights(sim_id)
         
         # Build context for AI
@@ -361,7 +361,7 @@ class SimulationManager:
             "total_providers": current_state.get('total_providers', 0),
             "current_metrics": current_state,
             "recent_insights": insights[-5:] if insights else [],
-            "innovations_active": sim['config'].dict()
+            "innovations_active": sim['config'].model_dump() if hasattr(sim['config'], 'model_dump') else sim['config'].dict()
         }
         
         # Process query with or without OpenAI

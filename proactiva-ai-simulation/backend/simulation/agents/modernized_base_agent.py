@@ -36,8 +36,9 @@ class ModernizedBaseAgent(Agent, ABC):
     """
     
     def __init__(self, unique_id: Union[int, str], model, agent_type: str):
-        # Mesa 3.0 initialization
-        super().__init__(unique_id, model)
+        # Mesa 3.0 initialization - model first, then set unique_id
+        super().__init__(model)
+        self.unique_id = unique_id
         
         # Agent identification
         self.agent_type = agent_type
