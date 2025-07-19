@@ -200,7 +200,7 @@ const NaturalLanguageQuery = ({ simulationId, onQueryResult }) => {
             {isListening ? 'Listening...' :
              isProcessing ? 'Thinking...' :
              isSpeaking ? 'Speaking...' :
-             'Virtual Assistant for Leaders'}
+             'Virtual Assistant'}
           </p>
         </div>
         

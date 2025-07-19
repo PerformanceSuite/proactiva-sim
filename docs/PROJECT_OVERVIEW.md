@@ -72,6 +72,8 @@ A production-ready platform with:
 - **AI Triage Systems** - Automated patient prioritization
 - **Mobile Health Units** - Outreach capabilities for underserved populations
 - **Robotic Assistants** - Automated support for routine tasks
+- **Humanoid Robots** - Advanced patient interaction, mobility assistance, and vital monitoring
+- **Pharmacy Automation** - Intelligent medication dispensing with error prevention and drug interaction checking
 
 ### 🎨 Advanced Visualization
 - **2D Hospital Maps** - Interactive floor plans with real-time agent movement
