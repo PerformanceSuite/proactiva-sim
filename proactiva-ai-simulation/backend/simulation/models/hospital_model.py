@@ -13,6 +13,8 @@ import numpy as np
 
 from ..agents.patient_agent import VeteranPatientAgent, PatientCondition
 from ..agents.provider_agent import ProviderAgent, ProviderType, ProviderSpecialty
+from ..agents.humanoid_robot_agent import HumanoidRobotAgent
+from ..agents.pharmacy_automation_agent import PharmacyAutomationAgent
 from ..insights.insight_engine import InsightEngine
 
 # Configure logging
@@ -45,6 +47,8 @@ class VAHospitalModel(Model):
         self.ai_triage_enabled = innovations.get('ai_triage_enabled', False)
         self.mobile_units = innovations.get('mobile_units', 0)
         self.robotic_assistants = innovations.get('robotic_assistants', 0)
+        self.humanoid_robots = innovations.get('humanoid_robots', 0)
+        self.pharmacy_automation = innovations.get('pharmacy_automation', False)
         
         # Facility layout
         self.G = self._create_hospital_network()
@@ -98,7 +102,11 @@ class VAHospitalModel(Model):
                 "Telehealth_Utilization": lambda m: m.telehealth_sessions_completed,
                 "Left_Without_Treatment_Rate": self._compute_lwot_rate,
                 "Mental_Health_Access": self._compute_mental_health_access,
-                "Cost_Per_Visit": self._compute_cost_per_visit
+                "Cost_Per_Visit": self._compute_cost_per_visit,
+                "Robot_Utilization": self._compute_robot_utilization,
+                "Robot_Tasks_Completed": self._compute_robot_tasks,
+                "Pharmacy_Prescriptions_Filled": self._compute_pharmacy_filled,
+                "Pharmacy_Queue_Length": self._compute_pharmacy_queue
             },
             agent_reporters={
                 "Type": lambda a: a.agent_type,
@@ -113,6 +121,8 @@ class VAHospitalModel(Model):
         self._create_providers(provider_mix)
         self._create_initial_patients()
         self._create_veteran_social_network()
+        self._create_humanoid_robots()
+        self._create_pharmacy_automation()
         
     def _create_hospital_network(self) -> nx.Graph:
         """Create network representation of hospital layout"""
@@ -133,6 +143,7 @@ class VAHospitalModel(Model):
             'imaging': {'type': 'support', 'capacity': 4},
             'vr_therapy_suite': {'type': 'innovation', 'capacity': self.vr_stations},
             'telehealth_center': {'type': 'innovation', 'capacity': self.telehealth_rooms},
+            'robot_dock': {'type': 'innovation', 'capacity': self.humanoid_robots},
             'discharge': {'type': 'access', 'capacity': 10}
         }
         
@@ -163,7 +174,11 @@ class VAHospitalModel(Model):
             ('emergency', 'discharge'),
             ('mental_health', 'discharge'),
             ('specialist', 'discharge'),
-            ('telehealth_center', 'discharge')
+            ('telehealth_center', 'discharge'),
+            ('robot_dock', 'entrance'),
+            ('robot_dock', 'waiting_room'),
+            ('robot_dock', 'emergency'),
+            ('robot_dock', 'pharmacy')
         ]
         
         G.add_edges_from(connections)
@@ -273,6 +288,37 @@ class VAHospitalModel(Model):
                         self.veteran_network.add_edge(v1.unique_id, v2.unique_id)
                         v1.social_connections.append(v2)
                         v2.social_connections.append(v1)
+    
+    def _create_humanoid_robots(self):
+        """Create humanoid robot agents for patient assistance"""
+        if self.humanoid_robots > 0:
+            for i in range(self.humanoid_robots):
+                robot_id = f"robot_{i}"
+                robot = HumanoidRobotAgent(
+                    robot_id,
+                    self,
+                    model_name=f"CareBot {i+1}",
+                    initial_location='robot_dock'
+                )
+                self.custom_agents.append(robot)
+                if self.grid:
+                    self.grid.place_agent(robot, 'robot_dock')
+                logger.info(f"Created humanoid robot {robot_id}")
+    
+    def _create_pharmacy_automation(self):
+        """Create pharmacy automation system"""
+        if self.pharmacy_automation:
+            pharmacy_id = "pharmacy_automation_1"
+            pharmacy_system = PharmacyAutomationAgent(
+                pharmacy_id,
+                self,
+                dispensing_capacity=500,
+                accuracy_rate=0.9999
+            )
+            self.custom_agents.append(pharmacy_system)
+            if self.grid:
+                self.grid.place_agent(pharmacy_system, 'pharmacy')
+            logger.info(f"Created pharmacy automation system {pharmacy_id}")
                         
     def step(self):
         """Advance simulation by one step with improved error handling"""
@@ -499,6 +545,31 @@ class VAHospitalModel(Model):
             innovation_savings += 15
             
         return base_cost + wait_cost - innovation_savings
+    
+    def _compute_robot_utilization(self) -> float:
+        """Compute robot utilization rate"""
+        robots = [a for a in self.custom_agents if isinstance(a, HumanoidRobotAgent)]
+        if not robots:
+            return 0
+        active_robots = sum(1 for r in robots if r.current_task.value != 'idle')
+        return active_robots / len(robots)
+    
+    def _compute_robot_tasks(self) -> int:
+        """Compute total robot tasks completed"""
+        robots = [a for a in self.custom_agents if isinstance(a, HumanoidRobotAgent)]
+        return sum(r.tasks_completed for r in robots)
+    
+    def _compute_pharmacy_filled(self) -> int:
+        """Compute total prescriptions filled by pharmacy automation"""
+        pharmacy_systems = [a for a in self.custom_agents if isinstance(a, PharmacyAutomationAgent)]
+        return sum(p.prescriptions_filled for p in pharmacy_systems)
+    
+    def _compute_pharmacy_queue(self) -> float:
+        """Compute average pharmacy queue length"""
+        pharmacy_systems = [a for a in self.custom_agents if isinstance(a, PharmacyAutomationAgent)]
+        if not pharmacy_systems:
+            return 0
+        return np.mean([len(p.prescription_queue) for p in pharmacy_systems])
         
     def _step_agents_optimized(self):
         """Optimized agent stepping for better performance with 1000+ agents"""
@@ -529,5 +600,9 @@ class VAHospitalModel(Model):
             'patients_treated': self.patients_treated,
             'left_without_treatment': self.patients_left_without_treatment,
             'mental_health_access': self._compute_mental_health_access(),
-            'cost_per_visit': self._compute_cost_per_visit()
+            'cost_per_visit': self._compute_cost_per_visit(),
+            'robot_utilization': self._compute_robot_utilization(),
+            'robot_tasks_completed': self._compute_robot_tasks(),
+            'pharmacy_prescriptions_filled': self._compute_pharmacy_filled(),
+            'pharmacy_queue_length': self._compute_pharmacy_queue()
         }

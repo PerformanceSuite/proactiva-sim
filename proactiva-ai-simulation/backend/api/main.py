@@ -53,6 +53,8 @@ class SimulationConfig(BaseModel):
     ai_triage_enabled: bool = Field(default=False)
     mobile_units: int = Field(default=0, ge=0, le=10)
     robotic_assistants: int = Field(default=0, ge=0, le=20)
+    humanoid_robots: int = Field(default=0, ge=0, le=10)
+    pharmacy_automation: bool = Field(default=False)
     
 class SimulationResponse(BaseModel):
     """Response when creating a simulation"""
@@ -105,7 +107,9 @@ class SimulationManager:
             'telehealth_rooms': config.telehealth_rooms,
             'ai_triage_enabled': config.ai_triage_enabled,
             'mobile_units': config.mobile_units,
-            'robotic_assistants': config.robotic_assistants
+            'robotic_assistants': config.robotic_assistants,
+            'humanoid_robots': config.humanoid_robots,
+            'pharmacy_automation': config.pharmacy_automation
         }
         
         model = VAHospitalModel(
@@ -382,7 +386,7 @@ class SimulationManager:
         """Process query using OpenAI GPT"""
         try:
             # Prepare system prompt
-            system_prompt = """You are VAL (Virtual Assistant for Leaders), an AI assistant specialized in healthcare administration for the PROACTIVA simulation platform. 
+            system_prompt = """You are VAL (Virtual Assistant), an AI assistant specialized in healthcare administration for the PROACTIVA simulation platform. 
             You help healthcare administrators understand their simulation results and make data-driven decisions. 
             Speak as VAL in a professional, concise, and helpful manner.
             

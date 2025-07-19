@@ -27,6 +27,8 @@ class InsightEngine:
         insights.extend(self._detect_satisfaction_drivers())
         insights.extend(self._detect_bottlenecks())
         insights.extend(self._detect_innovation_effectiveness())
+        insights.extend(self._detect_robot_performance())
+        insights.extend(self._detect_pharmacy_efficiency())
         insights.extend(self._detect_social_network_effects())
         insights.extend(self._detect_temporal_patterns())
         insights.extend(self._detect_resource_optimization())
@@ -236,6 +238,117 @@ class InsightEngine:
                         'current_utilization': vr_utilization,
                         'potential_sessions': self.model.vr_stations * 8,  # 8 sessions per day potential
                         'missed_opportunities': int((1 - vr_utilization) * self.model.vr_stations * 8)
+                    }
+                })
+                
+        return insights
+    
+    def _detect_robot_performance(self) -> List[Dict[str, Any]]:
+        """Analyze humanoid robot performance and utilization"""
+        insights = []
+        
+        if not hasattr(self.model, 'custom_agents'):
+            return insights
+            
+        # Get robot agents
+        robots = [a for a in self.model.custom_agents if hasattr(a, 'current_task')]
+        if not robots:
+            return insights
+            
+        # Calculate robot utilization
+        active_robots = sum(1 for r in robots if getattr(r, 'current_task', None) and r.current_task.value != 'idle')
+        utilization = active_robots / len(robots) if robots else 0
+        
+        # Low utilization insight
+        if utilization < 0.3 and len(robots) > 0:
+            avg_battery = np.mean([getattr(r, 'battery_level', 100) for r in robots])
+            insights.append({
+                'id': f'robot_underuse_{datetime.now().timestamp()}',
+                'type': 'robot_underutilization',
+                'severity': 'medium',
+                'title': 'Humanoid Robots Underutilized',
+                'description': f'Only {utilization:.0%} of robots are actively assisting patients',
+                'recommendation': 'Review task assignment algorithms and consider expanding robot capabilities to include medication delivery and patient education',
+                'confidence': 0.85,
+                'impact': {
+                    'robot_count': len(robots),
+                    'utilization_rate': utilization,
+                    'average_battery': avg_battery,
+                    'potential_improvements': 'Proactive patient outreach, scheduled wellness checks'
+                }
+            })
+            
+        # High efficiency insight
+        elif utilization > 0.8:
+            total_tasks = sum(getattr(r, 'tasks_completed', 0) for r in robots)
+            avg_satisfaction = np.mean([s for r in robots for s in getattr(r, 'patient_satisfaction_scores', [])])
+            
+            insights.append({
+                'id': f'robot_efficiency_{datetime.now().timestamp()}',
+                'type': 'robot_high_performance',
+                'severity': 'low',
+                'title': 'Humanoid Robots Showing Excellent Performance',
+                'description': f'Robots achieving {utilization:.0%} utilization with {avg_satisfaction:.1f}/5 patient satisfaction',
+                'recommendation': 'Consider expanding robot fleet or diversifying their capabilities to handle more complex tasks',
+                'confidence': 0.91,
+                'impact': {
+                    'tasks_completed': total_tasks,
+                    'patient_satisfaction': avg_satisfaction,
+                    'utilization_rate': utilization,
+                    'expansion_potential': 'Additional 2-3 robots could reduce patient wait times by 15%'
+                }
+            })
+            
+        return insights
+        
+    def _detect_pharmacy_efficiency(self) -> List[Dict[str, Any]]:
+        """Analyze pharmacy automation performance"""
+        insights = []
+        
+        if not hasattr(self.model, 'custom_agents'):
+            return insights
+            
+        # Get pharmacy automation agents
+        pharmacy_systems = [a for a in self.model.custom_agents if hasattr(a, 'prescription_queue')]
+        if not pharmacy_systems:
+            return insights
+            
+        for pharmacy in pharmacy_systems:
+            prescriptions_filled = getattr(pharmacy, 'prescriptions_filled', 0)
+            queue_length = len(getattr(pharmacy, 'prescription_queue', []))
+            errors_prevented = getattr(pharmacy, 'errors_prevented', 0)
+            
+            # High queue length insight
+            if queue_length > 10:
+                insights.append({
+                    'id': f'pharmacy_queue_{datetime.now().timestamp()}',
+                    'type': 'pharmacy_bottleneck',
+                    'severity': 'high',
+                    'title': 'Pharmacy Queue Building Up',
+                    'description': f'{queue_length} prescriptions waiting to be processed',
+                    'recommendation': 'Consider adding parallel processing units or temporary manual override for urgent prescriptions',
+                    'confidence': 0.93,
+                    'impact': {
+                        'queue_length': queue_length,
+                        'estimated_wait': f'{queue_length * 2} minutes',
+                        'patient_impact': 'Delayed medication access affecting treatment compliance'
+                    }
+                })
+                
+            # Error prevention insight
+            if errors_prevented > 0:
+                insights.append({
+                    'id': f'pharmacy_safety_{datetime.now().timestamp()}',
+                    'type': 'pharmacy_safety_impact',
+                    'severity': 'low',
+                    'title': 'Pharmacy Automation Preventing Medical Errors',
+                    'description': f'System prevented {errors_prevented} potential medication errors',
+                    'recommendation': 'Document error patterns for continuous improvement and provider education',
+                    'confidence': 0.97,
+                    'impact': {
+                        'errors_prevented': errors_prevented,
+                        'safety_improvement': 'Significant reduction in medication errors',
+                        'cost_savings': f'${errors_prevented * 2500} in potential adverse event costs avoided'
                     }
                 })
                 
